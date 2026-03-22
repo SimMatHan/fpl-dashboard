@@ -1,0 +1,1021 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>🏆 FPL Liga Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <style>
+    /* ── Design tokens ─────────────────────────────────────── */
+    :root {
+      --bg:        #0d1117;
+      --bg2:       #161b22;
+      --bg3:       #1c2128;
+      --accent:    #00ff85;
+      --accent2:   #00cc6a;
+      --txt:       #e6edf3;
+      --txt2:      #8b949e;
+      --border:    #30363d;
+      --red:       #ff4d4d;
+      --gold:      #ffd700;
+      --silver:    #c0c0c0;
+      --bronze:    #cd7f32;
+      --blue:      #58a6ff;
+    }
+
+    /* ── Reset & base ──────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--txt);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      font-size: 15px;
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+    a { color: var(--accent); text-decoration: none; }
+
+    /* ── Loading overlay ───────────────────────────────────── */
+    #loader {
+      position: fixed; inset: 0;
+      background: rgba(13,17,23,.93);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 18px; z-index: 2000;
+      transition: opacity .4s;
+    }
+    #loader.hidden { opacity: 0; pointer-events: none; }
+    .spinner {
+      width: 56px; height: 56px;
+      border: 4px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #loader-step  { color: var(--txt2); font-size: .9rem; }
+    .progress-wrap { width: 280px; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+    .progress-bar  { height: 100%; width: 0; background: var(--accent); border-radius: 2px; transition: width .35s ease; }
+
+    /* ── Confetti ──────────────────────────────────────────── */
+    #confetti { position: fixed; inset: 0; pointer-events: none; z-index: 1500; }
+
+    /* ── Header ────────────────────────────────────────────── */
+    header {
+      background: linear-gradient(135deg, #0d1117 0%, #0f2318 100%);
+      border-bottom: 2px solid var(--accent);
+      padding: 18px 32px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .brand { display: flex; align-items: center; gap: 14px; }
+    .brand-icon { font-size: 2.2rem; }
+    .brand h1 { font-size: 1.5rem; font-weight: 800; color: var(--accent); letter-spacing: .5px; }
+    .brand p  { font-size: .78rem; color: var(--txt2); margin-top: 1px; }
+    .header-decoration { font-size: 2rem; opacity: .2; }
+
+    /* ── Config bar ────────────────────────────────────────── */
+    #config-bar {
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 32px;
+      display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    }
+    #config-bar label { color: var(--txt2); font-size: .85rem; white-space: nowrap; }
+    #config-bar input {
+      background: var(--bg3); border: 1px solid var(--border);
+      color: var(--txt); padding: 7px 13px;
+      border-radius: 7px; font-size: .88rem;
+      width: 160px; transition: border-color .2s;
+    }
+    #config-bar input:focus { outline: none; border-color: var(--accent); }
+    #backend-input { width: 210px; }
+    .btn {
+      background: var(--accent); color: #000;
+      border: none; padding: 8px 20px;
+      border-radius: 7px; cursor: pointer;
+      font-weight: 800; font-size: .88rem;
+      transition: background .2s, transform .15s;
+    }
+    .btn:hover   { background: var(--accent2); transform: translateY(-1px); }
+    .btn:active  { transform: translateY(0); }
+    .btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+    #status-msg { margin-left: auto; font-size: .82rem; color: var(--txt2); }
+
+    /* ── Main layout ───────────────────────────────────────── */
+    main { padding: 28px 32px; max-width: 1440px; margin: 0 auto; }
+
+    /* Welcome */
+    #welcome {
+      text-align: center; padding: 100px 30px;
+      display: flex; flex-direction: column; align-items: center; gap: 14px;
+    }
+    #welcome .w-icon { font-size: 4rem; }
+    #welcome h2 { font-size: 1.6rem; color: var(--txt); }
+    #welcome p  { color: var(--txt2); max-width: 420px; }
+
+    /* ── Sections ──────────────────────────────────────────── */
+    .card {
+      background: var(--bg3); border: 1px solid var(--border);
+      border-radius: 14px; padding: 24px;
+      transition: border-color .2s;
+    }
+    .card:hover { border-color: #30363dcc; }
+    .section-hd {
+      display: flex; align-items: center; gap: 10px;
+      padding-bottom: 16px; margin-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .section-hd h2 { font-size: 1.1rem; font-weight: 700; }
+    .badge {
+      font-size: .7rem; font-weight: 800;
+      padding: 2px 9px; border-radius: 20px;
+      background: var(--accent); color: #000;
+    }
+    .badge-red  { background: var(--red);  color: #fff; }
+    .badge-gold { background: var(--gold); color: #000; }
+
+    /* ── Stat cards grid ───────────────────────────────────── */
+    #stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+      gap: 14px; margin-bottom: 24px;
+    }
+    .stat-card {
+      background: var(--bg3); border: 1px solid var(--border);
+      border-radius: 12px; padding: 18px 20px;
+      transition: border-color .2s, transform .2s;
+      cursor: default;
+    }
+    .stat-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+    .stat-card .sc-icon  { font-size: 1.6rem; margin-bottom: 6px; }
+    .stat-card .sc-label { font-size: .72rem; color: var(--txt2); text-transform: uppercase; letter-spacing: .9px; }
+    .stat-card .sc-val   { font-size: 1.75rem; font-weight: 800; color: var(--accent); margin: 2px 0; }
+    .stat-card .sc-sub   { font-size: .78rem; color: var(--txt2); }
+
+    /* ── Two-column layout ─────────────────────────────────── */
+    .two-col {
+      display: grid; grid-template-columns: 1.2fr 1fr;
+      gap: 24px; margin-bottom: 24px;
+    }
+
+    /* ── Standings table ───────────────────────────────────── */
+    .tbl { width: 100%; border-collapse: collapse; font-size: .88rem; }
+    .tbl th {
+      text-align: left; padding: 9px 12px;
+      color: var(--txt2); font-size: .72rem;
+      text-transform: uppercase; letter-spacing: .9px;
+      border-bottom: 1px solid var(--border);
+    }
+    .tbl td { padding: 11px 12px; border-bottom: 1px solid #30363d44; }
+    .tbl tbody tr:last-child td { border-bottom: none; }
+    .tbl tbody tr { transition: background .12s; }
+    .tbl tbody tr:hover { background: rgba(0,255,133,.045); }
+
+    .rank-badge {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 27px; height: 27px; border-radius: 50%;
+      font-weight: 800; font-size: .82rem;
+    }
+    .r1 { background: var(--gold);   color: #000; }
+    .r2 { background: var(--silver); color: #000; }
+    .r3 { background: var(--bronze); color: #000; }
+    .rn { background: var(--bg2);    color: var(--txt2); }
+
+    .team-cell { display: flex; flex-direction: column; }
+    .team-name { font-weight: 700; }
+    .mgr-name  { font-size: .75rem; color: var(--txt2); }
+
+    .total-pts { font-weight: 800; color: var(--accent); font-size: 1.05rem; }
+
+    .pill {
+      display: inline-block; font-size: .75rem; font-weight: 700;
+      padding: 2px 9px; border-radius: 20px;
+    }
+    .pill-up   { background: rgba(0,255,133,.15); color: var(--accent); }
+    .pill-dn   { background: rgba(255,77,77,.15);  color: var(--red); }
+    .pill-eq   { background: rgba(139,148,158,.15); color: var(--txt2); }
+
+    .gw-crown { /* badge on GW winner row */
+      display: inline-block; font-size: .68rem; font-weight: 800;
+      background: linear-gradient(135deg,#ffd700,#ffaa00);
+      color: #000; padding: 1px 7px; border-radius: 20px; margin-left: 7px;
+      vertical-align: middle;
+    }
+
+    /* ── Key stats panel ───────────────────────────────────── */
+    .ks-list { display: flex; flex-direction: column; gap: 14px; }
+    .ks-item {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: 10px; padding: 14px 16px;
+      display: flex; align-items: flex-start; gap: 12px;
+    }
+    .ks-icon  { font-size: 1.5rem; flex-shrink: 0; margin-top: 1px; }
+    .ks-body  {}
+    .ks-lbl   { font-size: .72rem; color: var(--txt2); text-transform: uppercase; letter-spacing: .9px; }
+    .ks-main  { font-size: 1rem; font-weight: 700; margin-top: 1px; }
+    .ks-sub   { font-size: .78rem; color: var(--txt2); }
+    .ks-val   { color: var(--accent); }
+    .ks-red   { color: var(--red); }
+
+    /* ── Charts ────────────────────────────────────────────── */
+    .chart-wrap { position: relative; }
+    .chart-wrap-tall  { height: 400px; }
+    .chart-wrap-short { height: 300px; }
+
+    /* Legend toggles */
+    .legend-row {
+      display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 14px;
+    }
+    .ltog {
+      padding: 3px 11px; border-radius: 20px;
+      border: 2px solid; cursor: pointer;
+      font-size: .75rem; font-weight: 700;
+      transition: all .15s; background: transparent;
+      line-height: 1.4;
+    }
+    .ltog.on  { color: #000 !important; }
+    .ltog.off { opacity: .4; }
+
+    /* GW selector */
+    .gw-row {
+      display: flex; align-items: center; gap: 10px; margin-bottom: 4px;
+      margin-left: auto;
+    }
+    .gw-row select {
+      background: var(--bg2); border: 1px solid var(--border);
+      color: var(--txt); padding: 6px 11px;
+      border-radius: 7px; font-size: .85rem; cursor: pointer;
+    }
+    .section-hd-right { margin-left: auto; }
+
+    /* ── Chip table ────────────────────────────────────────── */
+    .chip-tbl { width: 100%; border-collapse: collapse; font-size: .84rem; }
+    .chip-tbl th {
+      text-align: center; padding: 9px 10px;
+      color: var(--txt2); font-size: .72rem;
+      text-transform: uppercase; letter-spacing: .9px;
+      border-bottom: 1px solid var(--border);
+    }
+    .chip-tbl th:first-child { text-align: left; }
+    .chip-tbl td { padding: 10px; text-align: center; border-bottom: 1px solid #30363d44; }
+    .chip-tbl td:first-child { text-align: left; }
+    .chip-tbl tbody tr:last-child td { border-bottom: none; }
+
+    .chip { display: inline-block; font-size: .72rem; font-weight: 800; padding: 3px 9px; border-radius: 5px; }
+    .chip-wc { background: rgba(255,165,0,.2);  color: orange; }
+    .chip-bb { background: rgba(88,166,255,.2); color: var(--blue); }
+    .chip-tc { background: rgba(255,215,0,.2);  color: var(--gold); }
+    .chip-fh { background: rgba(190,75,255,.2); color: #be4bff; }
+    .chip-no { color: var(--border); font-size: .8rem; }
+
+    /* ── Hall of Shame ─────────────────────────────────────── */
+    .shame-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 14px;
+    }
+    .shame-card {
+      background: rgba(255,77,77,.07); border: 1px solid rgba(255,77,77,.25);
+      border-radius: 10px; padding: 18px; text-align: center;
+    }
+    .shame-medal { font-size: 1.8rem; }
+    .shame-lbl   { font-size: .72rem; color: var(--txt2); margin: 6px 0; text-transform: uppercase; letter-spacing: .8px; }
+    .shame-team  { font-weight: 800; font-size: 1rem; color: var(--red); }
+    .shame-pts   { font-size: 2.2rem; font-weight: 900; color: var(--red); line-height: 1.1; }
+    .shame-gw    { font-size: .78rem; color: var(--txt2); margin-top: 4px; }
+
+    /* ── Responsive ────────────────────────────────────────── */
+    @media (max-width: 920px) {
+      .two-col { grid-template-columns: 1fr; }
+      main { padding: 16px; }
+      header, #config-bar { padding-left: 16px; padding-right: 16px; }
+    }
+    @media (max-width: 520px) {
+      .brand h1 { font-size: 1.2rem; }
+      #stats-grid { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Loading overlay -->
+<div id="loader" class="hidden">
+  <div style="font-size:3.5rem">⚽</div>
+  <div class="spinner"></div>
+  <div id="loader-step">Henter data…</div>
+  <div class="progress-wrap"><div class="progress-bar" id="pbar"></div></div>
+</div>
+
+<!-- Confetti canvas -->
+<canvas id="confetti"></canvas>
+
+<!-- ── Header ────────────────────────────────────── -->
+<header>
+  <div class="brand">
+    <span class="brand-icon">🏆</span>
+    <div>
+      <h1>FPL Liga Dashboard</h1>
+      <p>Fantasy Premier League · Mini-liga statistikker</p>
+    </div>
+  </div>
+  <span class="header-decoration">⚽</span>
+</header>
+
+<!-- ── Config bar ─────────────────────────────────── -->
+<div id="config-bar">
+  <label for="liga-input">Liga&nbsp;ID:</label>
+  <input id="liga-input" type="text" placeholder="f.eks. 1234567" />
+
+  <label for="backend-input">Backend&nbsp;URL:</label>
+  <input id="backend-input" type="text" placeholder="auto-detect" />
+
+  <button class="btn" id="load-btn" onclick="loadDashboard()">📡 Hent data</button>
+
+  <span id="status-msg">Indtast liga-ID og tryk Hent data</span>
+</div>
+
+<!-- ── Main ───────────────────────────────────────── -->
+<main>
+
+  <!-- Welcome -->
+  <div id="welcome">
+    <div class="w-icon">⚽</div>
+    <h2>Velkommen til FPL Liga Dashboard</h2>
+    <p>Indtast dit liga-ID ovenfor og klik "Hent data" for at se live statistikker fra din mini-liga.</p>
+  </div>
+
+  <!-- Dashboard (hidden until data loads) -->
+  <div id="dashboard" style="display:none">
+
+    <!-- Stat cards -->
+    <div id="stats-grid"></div>
+
+    <!-- Standings + Key stats -->
+    <div class="two-col" style="margin-bottom:24px">
+
+      <div class="card">
+        <div class="section-hd">
+          <span>🏅</span><h2>Ligastilling</h2>
+          <span class="badge" id="gw-badge">GW ?</span>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th>#</th><th>Hold</th>
+                <th>Total</th><th>GW</th><th>+/−</th>
+              </tr>
+            </thead>
+            <tbody id="standings-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="section-hd"><span>📊</span><h2>Nøglestatistikker</h2></div>
+        <div class="ks-list" id="key-stats"></div>
+      </div>
+
+    </div>
+
+    <!-- Cumulative point chart -->
+    <div class="card" style="margin-bottom:24px">
+      <div class="section-hd">
+        <span>📈</span><h2>Point-udvikling over sæsonen</h2>
+        <span class="badge">Akkumuleret</span>
+      </div>
+      <div class="legend-row" id="legend-row"></div>
+      <div class="chart-wrap chart-wrap-tall">
+        <canvas id="cumul-chart"></canvas>
+      </div>
+    </div>
+
+    <!-- GW bar chart -->
+    <div class="card" style="margin-bottom:24px">
+      <div class="section-hd">
+        <span>🎯</span><h2>Gameweek-sammenligning</h2>
+        <div class="section-hd-right gw-row">
+          <label style="color:var(--txt2);font-size:.83rem">GW:</label>
+          <select id="gw-select" onchange="renderGWChart()"></select>
+        </div>
+      </div>
+      <div class="chart-wrap chart-wrap-short">
+        <canvas id="gw-chart"></canvas>
+      </div>
+    </div>
+
+    <!-- Chip usage -->
+    <div class="card" style="margin-bottom:24px">
+      <div class="section-hd"><span>🃏</span><h2>Chip-brug oversigt</h2></div>
+      <div style="overflow-x:auto">
+        <table class="chip-tbl">
+          <thead>
+            <tr>
+              <th>Hold</th>
+              <th>🔁 Wildcard 1</th>
+              <th>🔁 Wildcard 2</th>
+              <th>💺 Bench Boost</th>
+              <th>3️⃣ Triple Captain</th>
+              <th>🆓 Free Hit</th>
+            </tr>
+          </thead>
+          <tbody id="chip-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Hall of shame -->
+    <div class="card">
+      <div class="section-hd">
+        <span>😳</span><h2>Hall of Shame</h2>
+        <span class="badge badge-red">Bundrekord</span>
+      </div>
+      <div class="shame-grid" id="shame-grid"></div>
+    </div>
+
+  </div><!-- /dashboard -->
+</main>
+
+<script>
+/* ═══════════════════════════════════════════════════════
+   STATE
+═══════════════════════════════════════════════════════ */
+let LIGA_ID      = '';
+// Auto-detect: locally use port 8000, on Render use same origin
+let BACKEND_URL  = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+  ? `http://${window.location.hostname}:8000`
+  : window.location.origin;
+let managers     = [];   // [{id, managerName, teamName, totalPoints, rank, history[], chips[]}]
+let currentGW    = 1;
+let visibleIds   = new Set();
+let cumulChart   = null;
+let gwChart      = null;
+
+const COLORS = [
+  '#00ff85','#ff6b6b','#4ecdc4','#ffe66d','#a8e6cf',
+  '#ff8b94','#9b59b6','#58a6ff','#e67e22','#1abc9c','#ff4ecd'
+];
+
+/* ═══════════════════════════════════════════════════════
+   UTILS
+═══════════════════════════════════════════════════════ */
+const $ = id => document.getElementById(id);
+
+function setStatus(msg, err = false) {
+  const el = $('status-msg');
+  el.textContent = msg;
+  el.style.color = err ? 'var(--red)' : 'var(--txt2)';
+}
+
+function setLoading(show) {
+  $('loader').classList.toggle('hidden', !show);
+}
+
+function setProgress(pct, step) {
+  $('pbar').style.width = pct + '%';
+  $('loader-step').textContent = step;
+}
+
+function stdDev(arr) {
+  if (!arr.length) return 0;
+  const mean = arr.reduce((s, x) => s + x, 0) / arr.length;
+  return Math.sqrt(arr.reduce((s, x) => s + (x - mean) ** 2, 0) / arr.length);
+}
+
+function animCount(el, target, dur = 1100) {
+  if (isNaN(target)) return;
+  let start = null;
+  const step = ts => {
+    if (!start) start = ts;
+    const p = Math.min((ts - start) / dur, 1);
+    const ease = p < .5 ? 2*p*p : -1+(4-2*p)*p;
+    el.textContent = Math.round(target * ease).toLocaleString('da-DK');
+    if (p < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+/* ═══════════════════════════════════════════════════════
+   API
+═══════════════════════════════════════════════════════ */
+async function api(path) {
+  const res = await fetch(`${BACKEND_URL}${path}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status} – ${path}`);
+  return res.json();
+}
+
+/* ═══════════════════════════════════════════════════════
+   MAIN LOAD
+═══════════════════════════════════════════════════════ */
+async function loadDashboard() {
+  LIGA_ID = $('liga-input').value.trim();
+  const manualBackend = $('backend-input').value.trim().replace(/\/$/, '');
+  if (manualBackend) BACKEND_URL = manualBackend;
+
+  if (!LIGA_ID) { setStatus('⚠️ Indtast et liga-ID', true); return; }
+
+  $('load-btn').disabled = true;
+  setLoading(true);
+
+  try {
+    // 1 – league
+    setProgress(5, 'Henter ligastilling…');
+    const league = await api(`/api/league/${LIGA_ID}`);
+
+    // 2 – bootstrap
+    setProgress(15, 'Henter sæsondata…');
+    const boot = await api('/api/bootstrap');
+
+    // Current GW
+    const events = boot.events || [];
+    const finished = events.filter(e => e.finished);
+    currentGW = finished.length ? finished[finished.length - 1].id : 1;
+    $('gw-badge').textContent = `GW ${currentGW}`;
+
+    // 3 – manager histories
+    const standings = league.standings?.results || [];
+    managers = [];
+
+    for (let i = 0; i < standings.length; i++) {
+      const s = standings[i];
+      const pct = 20 + Math.round(((i + 1) / standings.length) * 72);
+      setProgress(pct, `Henter ${s.entry_name} (${i+1}/${standings.length})…`);
+      try {
+        const hist = await api(`/api/manager/${s.entry}/history`);
+        managers.push({
+          id:           s.entry,
+          managerName:  s.player_name,
+          teamName:     s.entry_name,
+          totalPoints:  s.total,
+          rank:         s.rank,
+          history:      hist.current  || [],
+          chips:        hist.chips    || [],
+        });
+      } catch {
+        managers.push({
+          id: s.entry, managerName: s.player_name,
+          teamName: s.entry_name, totalPoints: s.total,
+          rank: s.rank, history: [], chips: [],
+        });
+      }
+    }
+
+    setProgress(96, 'Bygger dashboard…');
+
+    // All visible by default
+    visibleIds = new Set(managers.map(m => m.id));
+
+    renderAll();
+
+    setProgress(100, 'Klar ✅');
+    setStatus(`✅ Sidst opdateret ${new Date().toLocaleTimeString('da-DK')} · ${managers.length} managers`);
+
+    $('welcome').style.display   = 'none';
+    $('dashboard').style.display = 'block';
+
+    setTimeout(() => confetti(2400), 600);
+
+  } catch (err) {
+    setStatus(`❌ ${err.message}`, true);
+    console.error(err);
+  } finally {
+    setLoading(false);
+    $('load-btn').disabled = false;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   RENDER ALL
+═══════════════════════════════════════════════════════ */
+function renderAll() {
+  renderStatCards();
+  renderStandings();
+  renderKeyStats();
+  renderCumulChart();
+  renderGWSelector();
+  renderGWChart();
+  renderChips();
+  renderShame();
+}
+
+/* ═══════════════════════════════════════════════════════
+   STAT CARDS
+═══════════════════════════════════════════════════════ */
+function renderStatCards() {
+  const sorted = [...managers].sort((a, b) => b.totalPoints - a.totalPoints);
+  const leader = sorted[0];
+
+  let bestGW  = { pts: 0,        name: '–', gw: 0 };
+  let worstGW = { pts: Infinity,  name: '–', gw: 0 };
+
+  managers.forEach(m => {
+    m.history.forEach(h => {
+      if (h.points > bestGW.pts)  bestGW  = { pts: h.points, name: m.teamName, gw: h.event };
+      if (h.points < worstGW.pts) worstGW = { pts: h.points, name: m.teamName, gw: h.event };
+    });
+  });
+  if (worstGW.pts === Infinity) worstGW.pts = 0;
+
+  // Most consistent (lowest stdev, min 3 GWs played)
+  let consistent = { sd: Infinity, name: '–' };
+  managers.forEach(m => {
+    if (m.history.length < 3) return;
+    const sd = stdDev(m.history.map(h => h.points));
+    if (sd < consistent.sd) consistent = { sd, name: m.teamName };
+  });
+
+  // Current GW top scorer
+  const gwScores = managers.map(m => {
+    const h = m.history.find(x => x.event === currentGW);
+    return { name: m.teamName, pts: h ? h.points : 0 };
+  }).sort((a, b) => b.pts - a.pts);
+  const gwLeader = gwScores[0] || { name: '–', pts: 0 };
+
+  const cards = [
+    { icon: '👑', lbl: 'Ligaleder',        val: leader?.totalPoints ?? 0,   sub: leader?.teamName ?? '' },
+    { icon: '🔥', lbl: 'Bedste GW-score',  val: bestGW.pts,                 sub: `${bestGW.name} · GW ${bestGW.gw}` },
+    { icon: '⚡',  lbl: `GW ${currentGW} vinder`, val: gwLeader.pts,         sub: gwLeader.name },
+    { icon: '🎯', lbl: 'Mest konsistent',  val: consistent.sd.toFixed(1),   sub: `${consistent.name} (σ)` },
+    { icon: '📅', lbl: 'Aktuel GW',        val: currentGW,                  sub: 'Gameweeks spillet' },
+    { icon: '👥', lbl: 'Antal managers',   val: managers.length,            sub: 'I mini-ligaen' },
+  ];
+
+  $('stats-grid').innerHTML = cards.map(c => `
+    <div class="stat-card">
+      <div class="sc-icon">${c.icon}</div>
+      <div class="sc-label">${c.lbl}</div>
+      <div class="sc-val" data-target="${parseFloat(c.val)}">${c.val}</div>
+      <div class="sc-sub">${c.sub}</div>
+    </div>`).join('');
+
+  // Animate numbers
+  $('stats-grid').querySelectorAll('.sc-val').forEach(el => {
+    const t = parseFloat(el.dataset.target);
+    if (!isNaN(t) && t > 5) animCount(el, t);
+  });
+}
+
+/* ═══════════════════════════════════════════════════════
+   STANDINGS
+═══════════════════════════════════════════════════════ */
+function renderStandings() {
+  const sorted = [...managers].sort((a, b) => b.totalPoints - a.totalPoints);
+
+  const gwWinnerPts = Math.max(
+    ...managers.map(m => { const h = m.history.find(x => x.event === currentGW); return h ? h.points : 0; })
+  );
+
+  $('standings-body').innerHTML = sorted.map((m, i) => {
+    const cur  = m.history.find(h => h.event === currentGW);
+    const prev = m.history.find(h => h.event === currentGW - 1);
+    const gwPts  = cur  ? cur.points  : '–';
+    const prevPts = prev ? prev.points : null;
+
+    let changeHtml = '<span class="pill pill-eq">=</span>';
+    if (cur && prevPts !== null) {
+      const d = cur.points - prevPts;
+      if (d > 0) changeHtml = `<span class="pill pill-up">+${d}</span>`;
+      else if (d < 0) changeHtml = `<span class="pill pill-dn">${d}</span>`;
+    }
+
+    const rClass = i === 0 ? 'r1' : i === 1 ? 'r2' : i === 2 ? 'r3' : 'rn';
+    const crown  = (cur && cur.points === gwWinnerPts && gwWinnerPts > 0)
+      ? '<span class="gw-crown">👑 GW</span>' : '';
+
+    return `<tr>
+      <td><span class="rank-badge ${rClass}">${i+1}</span></td>
+      <td>
+        <div class="team-cell">
+          <span class="team-name">${m.teamName}${crown}</span>
+          <span class="mgr-name">${m.managerName}</span>
+        </div>
+      </td>
+      <td><span class="total-pts">${m.totalPoints.toLocaleString('da-DK')}</span></td>
+      <td>${gwPts}</td>
+      <td>${changeHtml}</td>
+    </tr>`;
+  }).join('');
+}
+
+/* ═══════════════════════════════════════════════════════
+   KEY STATS
+═══════════════════════════════════════════════════════ */
+function renderKeyStats() {
+  const sorted = [...managers].sort((a, b) => b.totalPoints - a.totalPoints);
+
+  // Best single GW
+  let bestGW  = { pts: 0,       name: '–', mgr: '–', gw: 0 };
+  let worstGW = { pts: Infinity, name: '–', mgr: '–', gw: 0 };
+  managers.forEach(m => {
+    m.history.forEach(h => {
+      if (h.points > bestGW.pts)  bestGW  = { pts: h.points, name: m.teamName, mgr: m.managerName, gw: h.event };
+      if (h.points < worstGW.pts) worstGW = { pts: h.points, name: m.teamName, mgr: m.managerName, gw: h.event };
+    });
+  });
+  if (worstGW.pts === Infinity) worstGW.pts = 0;
+
+  // Consistent
+  let consistent = { sd: Infinity, name: '–', mgr: '–' };
+  managers.forEach(m => {
+    if (m.history.length < 3) return;
+    const sd = stdDev(m.history.map(h => h.points));
+    if (sd < consistent.sd) consistent = { sd, name: m.teamName, mgr: m.managerName };
+  });
+
+  // Biggest mover (most improved rank last 3 GWs approximated by last 3 GW points sum)
+  let hotStreak = { name: '–', pts: 0 };
+  if (currentGW >= 3) {
+    managers.forEach(m => {
+      const last3 = m.history.filter(h => h.event > currentGW - 3).reduce((s, h) => s + h.points, 0);
+      if (last3 > hotStreak.pts) hotStreak = { name: m.teamName, pts: last3 };
+    });
+  }
+
+  const leader  = sorted[0];
+  const lagging = sorted[sorted.length - 1];
+  const gap     = leader && lagging ? leader.totalPoints - lagging.totalPoints : 0;
+
+  const items = [
+    {
+      icon: '🔥', lbl: 'Bedste enkelt-GW',
+      main: `<span class="ks-val">${bestGW.pts} point</span> – ${bestGW.name}`,
+      sub: `GW ${bestGW.gw} · ${bestGW.mgr}`
+    },
+    {
+      icon: '📉', lbl: 'Laveste enkelt-GW',
+      main: `<span class="ks-red">${worstGW.pts} point</span> – ${worstGW.name}`,
+      sub: `GW ${worstGW.gw} · ${worstGW.mgr}`
+    },
+    {
+      icon: '🎯', lbl: 'Mest konsistent spiller',
+      main: `<span class="ks-val">${consistent.name}</span>`,
+      sub: `Standardafvigelse σ = ${consistent.sd.toFixed(2)} pt`
+    },
+    {
+      icon: '⚡', lbl: 'Varmeste form (seneste 3 GW)',
+      main: `<span class="ks-val">${hotStreak.name}</span>`,
+      sub: `${hotStreak.pts} point de seneste 3 GW`
+    },
+    {
+      icon: '📏', lbl: 'Afstand top → bund',
+      main: `<span class="ks-val">${gap} point</span>`,
+      sub: `${leader?.teamName ?? '–'} vs ${lagging?.teamName ?? '–'}`
+    },
+  ];
+
+  $('key-stats').innerHTML = items.map(it => `
+    <div class="ks-item">
+      <div class="ks-icon">${it.icon}</div>
+      <div class="ks-body">
+        <div class="ks-lbl">${it.lbl}</div>
+        <div class="ks-main">${it.main}</div>
+        <div class="ks-sub">${it.sub}</div>
+      </div>
+    </div>`).join('');
+}
+
+/* ═══════════════════════════════════════════════════════
+   CUMULATIVE CHART
+═══════════════════════════════════════════════════════ */
+function renderCumulChart() {
+  const sorted = [...managers].sort((a, b) => b.totalPoints - a.totalPoints);
+  const maxGW  = Math.max(...managers.map(m => m.history.length), 1);
+  const labels = Array.from({ length: maxGW }, (_, i) => `GW ${i+1}`);
+
+  // Legend toggles
+  $('legend-row').innerHTML = sorted.map((m, i) => {
+    const c = COLORS[i % COLORS.length];
+    return `<button
+      class="ltog on"
+      style="color:${c};border-color:${c};background:${c}22"
+      data-id="${m.id}"
+      onclick="toggleManager(${m.id},this,'${c}')"
+    >${m.teamName}</button>`;
+  }).join('');
+
+  const datasets = sorted.map((m, i) => {
+    const c = COLORS[i % COLORS.length];
+    let total = 0;
+    const data = Array.from({ length: maxGW }, (_, gw) => {
+      const h = m.history[gw];
+      if (h) { total += h.points; return total; }
+      return null;
+    });
+    return {
+      label: m.teamName,
+      data,
+      borderColor: c,
+      backgroundColor: c + '18',
+      borderWidth: 2.5,
+      pointRadius: 3,
+      pointHoverRadius: 6,
+      tension: 0.35,
+      fill: false,
+      _managerId: m.id,
+    };
+  });
+
+  if (cumulChart) cumulChart.destroy();
+  cumulChart = new Chart($('cumul-chart'), {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1c2128',
+          borderColor: '#30363d', borderWidth: 1,
+          titleColor: '#e6edf3', bodyColor: '#8b949e',
+          callbacks: {
+            label: ctx => ` ${ctx.dataset.label}: ${(ctx.parsed.y ?? 0).toLocaleString('da-DK')} pt`
+          }
+        }
+      },
+      scales: {
+        x: { grid: { color: '#30363d44' }, ticks: { color: '#8b949e', font: { size: 11 } } },
+        y: { grid: { color: '#30363d44' }, ticks: { color: '#8b949e', font: { size: 11 } } }
+      }
+    }
+  });
+}
+
+function toggleManager(id, btn, color) {
+  if (visibleIds.has(id)) {
+    visibleIds.delete(id);
+    btn.className = 'ltog off';
+    btn.style.cssText = `color:${color};border-color:${color};background:transparent`;
+  } else {
+    visibleIds.add(id);
+    btn.className = 'ltog on';
+    btn.style.cssText = `color:#000;border-color:${color};background:${color}`;
+  }
+  cumulChart.data.datasets.forEach(ds => { ds.hidden = !visibleIds.has(ds._managerId); });
+  cumulChart.update();
+}
+
+/* ═══════════════════════════════════════════════════════
+   GW SELECTOR & BAR CHART
+═══════════════════════════════════════════════════════ */
+function renderGWSelector() {
+  const sel = $('gw-select');
+  sel.innerHTML = '';
+  for (let gw = currentGW; gw >= 1; gw--) {
+    const o = document.createElement('option');
+    o.value = gw; o.textContent = `Gameweek ${gw}`;
+    if (gw === currentGW) o.selected = true;
+    sel.appendChild(o);
+  }
+}
+
+function renderGWChart() {
+  const gw = parseInt($('gw-select').value);
+
+  const rows = managers.map(m => {
+    const h = m.history.find(x => x.event === gw);
+    return { name: m.teamName, pts: h ? h.points : 0 };
+  }).sort((a, b) => b.pts - a.pts);
+
+  const maxPts = rows[0]?.pts ?? 0;
+
+  const bgColors     = rows.map(r => r.pts === maxPts && maxPts > 0 ? '#ffd700cc' : '#00ff8555');
+  const borderColors = rows.map(r => r.pts === maxPts && maxPts > 0 ? '#ffaa00'   : '#00ff85');
+
+  if (gwChart) gwChart.destroy();
+  gwChart = new Chart($('gw-chart'), {
+    type: 'bar',
+    data: {
+      labels: rows.map(r => r.name),
+      datasets: [{
+        label: `GW ${gw} point`,
+        data: rows.map(r => r.pts),
+        backgroundColor: bgColors,
+        borderColor: borderColors,
+        borderWidth: 2,
+        borderRadius: 7,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1c2128',
+          borderColor: '#30363d', borderWidth: 1,
+          titleColor: '#e6edf3', bodyColor: '#8b949e',
+          callbacks: { label: ctx => ` ${ctx.parsed.y} point` }
+        }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: '#8b949e', font: { size: 11 } } },
+        y: { grid: { color: '#30363d44' }, ticks: { color: '#8b949e' }, beginAtZero: true }
+      }
+    }
+  });
+}
+
+/* ═══════════════════════════════════════════════════════
+   CHIP TABLE
+═══════════════════════════════════════════════════════ */
+function renderChips() {
+  const sorted = [...managers].sort((a, b) => b.totalPoints - a.totalPoints);
+
+  const chip = (chips, name, cls, nth = 0) => {
+    const matches = chips.filter(c => c.name === name);
+    const c = matches[nth];
+    return c
+      ? `<span class="chip ${cls}">GW ${c.event}</span>`
+      : `<span class="chip-no">–</span>`;
+  };
+
+  $('chip-body').innerHTML = sorted.map(m => `
+    <tr>
+      <td>
+        <strong>${m.teamName}</strong><br>
+        <span style="font-size:.75rem;color:var(--txt2)">${m.managerName}</span>
+      </td>
+      <td>${chip(m.chips, 'wildcard', 'chip-wc', 0)}</td>
+      <td>${chip(m.chips, 'wildcard', 'chip-wc', 1)}</td>
+      <td>${chip(m.chips, 'bboost',  'chip-bb')}</td>
+      <td>${chip(m.chips, '3xc',     'chip-tc')}</td>
+      <td>${chip(m.chips, 'freehit', 'chip-fh')}</td>
+    </tr>`).join('');
+}
+
+/* ═══════════════════════════════════════════════════════
+   HALL OF SHAME
+═══════════════════════════════════════════════════════ */
+function renderShame() {
+  let all = [];
+  managers.forEach(m => {
+    m.history.forEach(h => all.push({ pts: h.points, team: m.teamName, mgr: m.managerName, gw: h.event }));
+  });
+  all.sort((a, b) => a.pts - b.pts);
+  const top3 = all.slice(0, 3);
+  const medals = ['🥇', '🥈', '🥉'];
+  const labels = ['Største FPL-katastrofe 💀', '2. i skam 😬', '3. i skam 🙈'];
+
+  $('shame-grid').innerHTML = top3.map((e, i) => `
+    <div class="shame-card">
+      <div class="shame-medal">${medals[i]}</div>
+      <div class="shame-lbl">${labels[i]}</div>
+      <div class="shame-team">${e.team}</div>
+      <div class="shame-pts">${e.pts}</div>
+      <div class="shame-gw">point · GW ${e.gw} · ${e.mgr}</div>
+    </div>`).join('');
+}
+
+/* ═══════════════════════════════════════════════════════
+   CONFETTI
+═══════════════════════════════════════════════════════ */
+function confetti(dur) {
+  const cv = $('confetti');
+  const cx = cv.getContext('2d');
+  cv.width  = innerWidth;
+  cv.height = innerHeight;
+
+  const cols  = ['#00ff85','#ffd700','#ff6b6b','#58a6ff','#ffffff','#ff4ecd'];
+  const pieces = Array.from({ length: 90 }, () => ({
+    x: Math.random() * cv.width,
+    y: Math.random() * cv.height - cv.height,
+    r: Math.random() * 7 + 3,
+    d: Math.random() * 70 + 20,
+    col: cols[Math.floor(Math.random() * cols.length)],
+    tilt: Math.random() * 10 - 10,
+    tAngle: 0,
+    tInc: Math.random() * .06 + .04,
+  }));
+
+  let angle = 0;
+  const t0 = Date.now();
+
+  function draw() {
+    cx.clearRect(0, 0, cv.width, cv.height);
+    angle += .01;
+    pieces.forEach(p => {
+      p.tAngle += p.tInc;
+      p.y += (Math.cos(angle + p.d) + 2.2 + p.r / 3) * 1.4;
+      p.x += Math.sin(angle) * .8;
+      p.tilt = Math.sin(p.tAngle) * 14;
+      cx.beginPath();
+      cx.lineWidth   = p.r / 2;
+      cx.strokeStyle = p.col;
+      cx.moveTo(p.x + p.tilt + p.r / 3, p.y);
+      cx.lineTo(p.x + p.tilt, p.y + p.tilt + p.r / 3);
+      cx.stroke();
+      if (p.y > cv.height) { p.y = -20; p.x = Math.random() * cv.width; }
+    });
+    if (Date.now() - t0 < dur) requestAnimationFrame(draw);
+    else cx.clearRect(0, 0, cv.width, cv.height);
+  }
+  draw();
+}
+
+/* Resize charts on window resize */
+window.addEventListener('resize', () => {
+  cumulChart?.resize();
+  gwChart?.resize();
+});
+</script>
+</body>
+</html>
